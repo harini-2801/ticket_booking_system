@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("CUSTOMER") // ADMIN, ORGANISER, CUSTOMER
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events    Event[]    @relation("OrganiserEvents")
+  bookings  Booking[]
+  waitlists Waitlist[]
+  holds     ShowSeat[] @relation("HeldByUser")
+}
+
+model Venue {
+  id          String   @id @default(uuid())
+  name        String
+  location    String
+  totalRows   Int
+  seatsPerRow Int
+  createdAt   DateTime @default(now())
+
+  seats  SeatTemplate[]
+  events Event[]
+}
+
+model SeatTemplate {
+  id        String @id @default(uuid())
+  venueId   String
+  row       String // e.g. 'A', 'B', 'C'
+  number    Int    // e.g. 1, 2, 3
+  category  String // STANDARD, PREMIUM, VIP
+
+  venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  showSeats ShowSeat[]
+
+  @@unique([venueId, row, number])
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  category    String   // MOVIE, CONCERT
+  posterUrl   String
+  venueId     String
+  organiserId String
+  date        DateTime
+  createdAt   DateTime @default(now())
+
+  venue        Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  organiser    User           @relation("OrganiserEvents", fields: [organiserId], references: [id], onDelete: Cascade)
+  pricings     EventPricing[]
+  showSeats    ShowSeat[]
+  bookings     Booking[]
+  waitlists    Waitlist[]
+}
+
+model EventPricing {
+  id           String @id @default(uuid())
+  eventId      String
+  seatCategory String // STANDARD, PREMIUM, VIP
+  price        Float
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, seatCategory])
+}
+
+model ShowSeat {
+  id             String    @id @default(uuid())
+  eventId        String
+  seatTemplateId String
+  status         String    @default("AVAILABLE") // AVAILABLE, HELD, BOOKED
+  heldByUserId   String?
+  holdExpiresAt  DateTime?
+  version        Int       @default(0) // Optimistic concurrency version
+
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seatTemplate SeatTemplate @relation(fields: [seatTemplateId], references: [id], onDelete: Cascade)
+  heldByUser   User?        @relation("HeldByUser", fields: [heldByUserId], references: [id], onDelete: SetNull)
+  bookingSeats BookingSeat[]
+
+  @@unique([eventId, seatTemplateId])
+}
+
+model Booking {
+  id          String   @id @default(uuid())
+  bookingRef  String   @unique
+  userId      String
+  eventId     String
+  totalAmount Float
+  status      String   @default("CONFIRMED") // CONFIRMED, CANCELLED
+  qrCodeUrl   String?  // Data URL for QR Code
+  createdAt   DateTime @default(now())
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seats BookingSeat[]
+}
+
+model BookingSeat {
+  id         String @id @default(uuid())
+  bookingId  String
+  showSeatId String
+  price      Float
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  showSeat ShowSeat @relation(fields: [showSeatId], references: [id], onDelete: Cascade)
+}
+
+model Waitlist {
+  id             String    @id @default(uuid())
+  eventId        String
+  userId         String
+  seatCategory   String    // STANDARD, PREMIUM, VIP
+  status         String    @default("WAITING") // WAITING, OFFERED, EXPIRED, FULFILLED
+  offerExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
