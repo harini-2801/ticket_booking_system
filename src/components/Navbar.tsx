@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Ticket, LogOut, LayoutDashboard, Building2, Calendar, MapPin, ChevronDown, Sparkles, Film, Music, Smile, Trophy, Drama, Utensils } from 'lucide-react';
+import { Ticket, LogOut, LayoutDashboard, Building2, Calendar, MapPin, ChevronDown, Sparkles } from 'lucide-react';
 
 interface User {
   id: string;
@@ -64,7 +64,6 @@ export default function Navbar() {
   const handleCitySelect = (cityName: string) => {
     setSelectedCity(cityName);
     setShowCityDropdown(false);
-    // Dispatch custom event for city change across pages
     window.dispatchEvent(new CustomEvent('cityChanged', { detail: cityName }));
   };
 
@@ -80,9 +79,9 @@ export default function Navbar() {
               </div>
               <div className="flex flex-col">
                 <span className="font-extrabold text-xl tracking-tight text-white flex items-center gap-1">
-                  District<span className="text-blue-400">Pass</span>
+                  Ticket<span className="text-blue-400">Pass</span>
                 </span>
-                <span className="text-[9px] uppercase tracking-widest text-slate-400 font-semibold">Events & Nightlife</span>
+                <span className="text-[9px] uppercase tracking-widest text-slate-400 font-semibold">Movies & Live Events</span>
               </div>
             </Link>
 
@@ -164,7 +163,7 @@ export default function Navbar() {
             )}
           </nav>
 
-          {/* User Auth Profile */}
+          {/* User Auth Buttons */}
           <div className="flex items-center gap-4">
             {loading ? (
               <div className="w-20 h-8 bg-slate-900 animate-pulse rounded-lg" />
@@ -186,12 +185,12 @@ export default function Navbar() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <Link
                   href="/login"
                   className="text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-2 rounded-xl hover:bg-slate-900 transition-colors"
                 >
-                  Log In
+                  Sign In
                 </Link>
                 <Link
                   href="/register"

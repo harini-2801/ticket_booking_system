@@ -36,11 +36,11 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//District TicketPass System//EN',
+      'PRODID:-//TicketPass System//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      `UID:${booking.bookingRef}@district.com`,
+      `UID:${booking.bookingRef}@ticketpass.com`,
       `DTSTAMP:${formatDate(new Date())}`,
       `DTSTART:${formatDate(eventDate)}`,
       `DTEND:${formatDate(endDate)}`,

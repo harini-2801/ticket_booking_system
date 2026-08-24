@@ -144,7 +144,7 @@ export default function OrganiserPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
         <div>
           <h1 className="text-3xl font-extrabold text-white flex items-center gap-2">
-            <LayoutDashboard className="w-7 h-7 text-blue-500" /> District Organiser Studio
+            <LayoutDashboard className="w-7 h-7 text-blue-500" /> Organiser Studio
           </h1>
           <p className="text-slate-400 text-sm mt-1">
             Manage multi-genre event listings, track ticket sales, occupancy, and total revenue analytics.
@@ -209,7 +209,7 @@ export default function OrganiserPage() {
               onClick={() => setShowCreateModal(true)}
               className="text-xs font-bold text-blue-400 hover:underline"
             >
-              + Create your first District event
+              + Create your first event
             </button>
           </div>
         ) : (
@@ -276,7 +276,7 @@ export default function OrganiserPage() {
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-xl font-extrabold text-white">Publish District Event Listing</h3>
+            <h3 className="text-xl font-extrabold text-white">Publish New Event Listing</h3>
 
             {errorMsg && (
               <div className="p-3 bg-red-950 border border-red-800 text-red-200 rounded-xl text-xs">

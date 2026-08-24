@@ -333,7 +333,7 @@ function EventBookingContent() {
   if (loading || !event) {
     return (
       <div className="flex items-center justify-center py-24 text-slate-400">
-        Loading District Event Experience...
+        Loading Event Details & Seat Map...
       </div>
     );
   }
@@ -374,7 +374,7 @@ function EventBookingContent() {
         href="/"
         className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
       >
-        <ArrowLeft className="w-4 h-4" /> Back to District Events
+        <ArrowLeft className="w-4 h-4" /> Back to Events Catalog
       </Link>
 
       {/* Hero Header */}
@@ -692,7 +692,7 @@ function EventBookingContent() {
             </button>
 
             <div className="space-y-1">
-              <h3 className="text-xl font-extrabold text-white">District Pass Order Summary</h3>
+              <h3 className="text-xl font-extrabold text-white">TicketPass Order Summary</h3>
               <p className="text-xs text-slate-400">Review your ticket seats & Food/Beverage add-ons.</p>
             </div>
 
@@ -750,7 +750,7 @@ function EventBookingContent() {
 
 export default function EventBookingPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-24 text-slate-400">Loading District Event...</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center py-24 text-slate-400">Loading Event Details & Seat Map...</div>}>
       <EventBookingContent />
     </Suspense>
   );

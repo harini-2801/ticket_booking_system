@@ -46,7 +46,7 @@ async function main() {
 
   const organiser = await prisma.user.create({
     data: {
-      name: 'District Entertainment Corp',
+      name: 'Metro Events Corp',
       email: 'organiser@demo.com',
       password: passwordHash,
       role: 'ORGANISER',
@@ -55,7 +55,7 @@ async function main() {
 
   const admin = await prisma.user.create({
     data: {
-      name: 'District System Admin',
+      name: 'System Administrator',
       email: 'admin@demo.com',
       password: passwordHash,
       role: 'ADMIN',
@@ -444,7 +444,7 @@ async function main() {
     });
 
     if (seat1 && seat2) {
-      const bookingRef = 'DISTRICT-88910-VIP';
+      const bookingRef = 'TKT-88910-VIP';
       const qrCodeUrl = await QRCode.toDataURL(bookingRef, { width: 250, margin: 2 });
 
       const booking = await prisma.booking.create({

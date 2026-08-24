@@ -141,7 +141,7 @@ export async function POST(req: Request) {
 
     // Generate Unique Booking Reference
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const bookingRef = `DISTRICT-${Date.now().toString().slice(-6)}-${randomSuffix}`;
+    const bookingRef = `TKT-${Date.now().toString().slice(-6)}-${randomSuffix}`;
 
     const qrCodeUrl = await generateQRCode(bookingRef);
 
