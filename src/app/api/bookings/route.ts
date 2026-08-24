@@ -18,13 +18,18 @@ export async function GET() {
       where: { userId: user.id },
       include: {
         event: {
-          include: { venue: true },
+          include: { venue: true, city: true },
         },
         seats: {
           include: {
             showSeat: {
               include: { seatTemplate: true },
             },
+          },
+        },
+        addons: {
+          include: {
+            foodAddon: true,
           },
         },
       },
@@ -47,7 +52,7 @@ export async function POST(req: Request) {
 
     await releaseExpiredHolds();
 
-    const { eventId, showSeatIds } = await req.json();
+    const { eventId, showSeatIds, selectedAddons } = await req.json();
 
     if (!eventId || !showSeatIds || !Array.isArray(showSeatIds) || showSeatIds.length === 0) {
       return NextResponse.json({ error: 'Invalid booking parameters' }, { status: 400 });
@@ -55,7 +60,6 @@ export async function POST(req: Request) {
 
     const now = new Date();
 
-    // Verify seats are held by this user and unexpired
     const showSeats = await prisma.showSeat.findMany({
       where: {
         id: { in: showSeatIds },
@@ -85,7 +89,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Fetch Event Pricings
     const pricings = await prisma.eventPricing.findMany({
       where: { eventId },
     });
@@ -93,12 +96,12 @@ export async function POST(req: Request) {
     const priceMap = new Map<string, number>();
     pricings.forEach((p) => priceMap.set(p.seatCategory, p.price));
 
-    let totalAmount = 0;
+    let ticketAmount = 0;
     const seatPrices: { showSeatId: string; price: number; seatName: string }[] = [];
 
     for (const seat of showSeats) {
       const price = priceMap.get(seat.seatTemplate.category) || 20;
-      totalAmount += price;
+      ticketAmount += price;
       seatPrices.push({
         showSeatId: seat.id,
         price,
@@ -106,16 +109,43 @@ export async function POST(req: Request) {
       });
     }
 
+    // Process Food & Beverage Addons
+    let addonAmount = 0;
+    const validatedAddons: { foodAddonId: string; quantity: number; price: number; name: string }[] = [];
+
+    if (selectedAddons && Array.isArray(selectedAddons) && selectedAddons.length > 0) {
+      const addonIds = selectedAddons.map((a: any) => a.addonId);
+      const foodAddonRecords = await prisma.foodAddon.findMany({
+        where: { id: { in: addonIds } },
+      });
+
+      const addonMap = new Map<string, any>();
+      foodAddonRecords.forEach((f) => addonMap.set(f.id, f));
+
+      for (const item of selectedAddons) {
+        const dbAddon = addonMap.get(item.addonId);
+        if (dbAddon && item.quantity > 0) {
+          const itemTotal = dbAddon.price * item.quantity;
+          addonAmount += itemTotal;
+          validatedAddons.push({
+            foodAddonId: dbAddon.id,
+            quantity: item.quantity,
+            price: dbAddon.price,
+            name: dbAddon.name,
+          });
+        }
+      }
+    }
+
+    const totalAmount = ticketAmount + addonAmount;
+
     // Generate Unique Booking Reference
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const bookingRef = `TKT-${Date.now().toString().slice(-6)}-${randomSuffix}`;
+    const bookingRef = `DISTRICT-${Date.now().toString().slice(-6)}-${randomSuffix}`;
 
-    // Generate QR Code Data URL
     const qrCodeUrl = await generateQRCode(bookingRef);
 
-    // Create Booking inside Transaction
     const booking = await prisma.$transaction(async (tx) => {
-      // Create Booking Record
       const newBooking = await tx.booking.create({
         data: {
           bookingRef,
@@ -127,7 +157,6 @@ export async function POST(req: Request) {
         },
       });
 
-      // Create BookingSeat Records & update ShowSeats to BOOKED
       for (const sp of seatPrices) {
         await tx.bookingSeat.create({
           data: {
@@ -148,7 +177,17 @@ export async function POST(req: Request) {
         });
       }
 
-      // If user had waitlist offer, fulfill it
+      for (const va of validatedAddons) {
+        await tx.bookingAddon.create({
+          data: {
+            bookingId: newBooking.id,
+            foodAddonId: va.foodAddonId,
+            quantity: va.quantity,
+            price: va.price,
+          },
+        });
+      }
+
       await tx.waitlist.updateMany({
         where: {
           eventId,
@@ -163,15 +202,18 @@ export async function POST(req: Request) {
       return newBooking;
     });
 
-    // Fetch Event Details for Email
     const event = await prisma.event.findUnique({
       where: { id: eventId },
       include: { venue: true },
     });
 
     if (event) {
-      // Send Email with QR Code in background
       const seatNames = seatPrices.map((s) => s.seatName);
+      if (validatedAddons.length > 0) {
+        const addonSummary = validatedAddons.map((a) => `${a.quantity}x ${a.name}`).join(', ');
+        seatNames.push(`F&B Addons: ${addonSummary}`);
+      }
+
       sendBookingTicketEmail(
         user.email,
         user.name,
