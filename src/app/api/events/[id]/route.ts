@@ -9,7 +9,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const user = await getCurrentUser();
     const eventId = params.id;
 
-    // Auto-release any expired holds and offers before returning seat status
     await releaseExpiredHolds();
     await expireWaitlistOffers();
 
@@ -21,7 +20,11 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             seats: true,
           },
         },
+        city: true,
         pricings: true,
+        performers: {
+          include: { performer: true },
+        },
         organiser: {
           select: { id: true, name: true, email: true },
         },
@@ -32,7 +35,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    // Get current show seats state
     const showSeats = await prisma.showSeat.findMany({
       where: { eventId },
       include: {
@@ -40,7 +42,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       },
     });
 
-    // Check waitlist counts and current user's waitlist status per category
     const categoryWaitlists: Record<string, { count: number; userWaitlisted: boolean; userOffer: any }> = {};
 
     for (const pricing of event.pricings) {
@@ -81,10 +82,15 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       };
     }
 
+    const foodAddons = await prisma.foodAddon.findMany({
+      orderBy: { price: 'asc' },
+    });
+
     return NextResponse.json({
       event,
       showSeats,
       categoryWaitlists,
+      foodAddons,
       currentUserId: user?.id || null,
     });
   } catch (err: any) {

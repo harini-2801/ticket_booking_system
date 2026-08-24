@@ -22,24 +22,39 @@ model User {
   holds     ShowSeat[] @relation("HeldByUser")
 }
 
+model City {
+  id        String   @id @default(uuid())
+  name      String   @unique // Mumbai, Delhi NCR, Bengaluru, Hyderabad, Goa
+  state     String
+  isPopular Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  venues Venue[]
+  events Event[]
+}
+
 model Venue {
   id          String   @id @default(uuid())
   name        String
   location    String
-  totalRows   Int
-  seatsPerRow Int
+  address     String   @default("")
+  cityId      String?
+  totalRows   Int      @default(6)
+  seatsPerRow Int      @default(10)
+  hasSeating  Boolean  @default(true)
   createdAt   DateTime @default(now())
 
+  city   City?          @relation(fields: [cityId], references: [id], onDelete: SetNull)
   seats  SeatTemplate[]
   events Event[]
 }
 
 model SeatTemplate {
-  id        String @id @default(uuid())
-  venueId   String
-  row       String // e.g. 'A', 'B', 'C'
-  number    Int    // e.g. 1, 2, 3
-  category  String // STANDARD, PREMIUM, VIP
+  id       String @id @default(uuid())
+  venueId  String
+  row      String // e.g. 'A', 'B', 'C'
+  number   Int // e.g. 1, 2, 3
+  category String // STANDARD, PREMIUM, VIP, PLATINUM, GOLD, SILVER
 
   venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
   showSeats ShowSeat[]
@@ -47,34 +62,80 @@ model SeatTemplate {
   @@unique([venueId, row, number])
 }
 
-model Event {
-  id          String   @id @default(uuid())
-  title       String
-  description String
-  category    String   // MOVIE, CONCERT
-  posterUrl   String
-  venueId     String
-  organiserId String
-  date        DateTime
-  createdAt   DateTime @default(now())
+model Performer {
+  id        String   @id @default(uuid())
+  name      String
+  role      String // Actor, Musician, Comedian, DJ, Athlete
+  avatarUrl String
+  bio       String   @default("")
+  createdAt DateTime @default(now())
 
-  venue        Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  organiser    User           @relation("OrganiserEvents", fields: [organiserId], references: [id], onDelete: Cascade)
-  pricings     EventPricing[]
-  showSeats    ShowSeat[]
-  bookings     Booking[]
-  waitlists    Waitlist[]
+  events EventPerformer[]
+}
+
+model Event {
+  id             String   @id @default(uuid())
+  title          String
+  subtitle       String   @default("")
+  description    String
+  category       String // MOVIE, CONCERT, COMEDY, SPORTS, THEATRE, FOOD_NIGHTLIFE
+  genre          String   @default("General") // Sci-Fi, Pop/Rock, Standup, Action, Drama
+  language       String   @default("English") // English, Hindi, Hinglish, Multilingual
+  ageRestriction String   @default("All Ages") // All Ages, 16+, 18+
+  duration       String   @default("2h 30m")
+  posterUrl      String
+  bannerUrl      String   @default("")
+  venueId        String
+  cityId         String?
+  organiserId    String
+  date           DateTime
+  endDate        DateTime?
+  isFeatured     Boolean  @default(false)
+  hasSeating     Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  venue      Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  city       City?            @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  organiser  User             @relation("OrganiserEvents", fields: [organiserId], references: [id], onDelete: Cascade)
+  performers EventPerformer[]
+  pricings   EventPricing[]
+  showSeats  ShowSeat[]
+  bookings   Booking[]
+  waitlists  Waitlist[]
+}
+
+model EventPerformer {
+  id          String @id @default(uuid())
+  eventId     String
+  performerId String
+
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  performer Performer @relation(fields: [performerId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, performerId])
 }
 
 model EventPricing {
   id           String @id @default(uuid())
   eventId      String
-  seatCategory String // STANDARD, PREMIUM, VIP
+  seatCategory String // STANDARD, PREMIUM, VIP, PLATINUM, GOLD, SILVER, GENERAL_STANDING
   price        Float
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, seatCategory])
+}
+
+model FoodAddon {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  category    String   // SNACK, BEVERAGE, COMBO, VIP_PERK
+  price       Float
+  imageUrl    String
+  createdAt   DateTime @default(now())
+
+  bookingAddons BookingAddon[]
 }
 
 model ShowSeat {
@@ -84,11 +145,11 @@ model ShowSeat {
   status         String    @default("AVAILABLE") // AVAILABLE, HELD, BOOKED
   heldByUserId   String?
   holdExpiresAt  DateTime?
-  version        Int       @default(0) // Optimistic concurrency version
+  version        Int       @default(0)
 
-  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  seatTemplate SeatTemplate @relation(fields: [seatTemplateId], references: [id], onDelete: Cascade)
-  heldByUser   User?        @relation("HeldByUser", fields: [heldByUserId], references: [id], onDelete: SetNull)
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seatTemplate SeatTemplate  @relation(fields: [seatTemplateId], references: [id], onDelete: Cascade)
+  heldByUser   User?         @relation("HeldByUser", fields: [heldByUserId], references: [id], onDelete: SetNull)
   bookingSeats BookingSeat[]
 
   @@unique([eventId, seatTemplateId])
@@ -104,9 +165,10 @@ model Booking {
   qrCodeUrl   String?  // Data URL for QR Code
   createdAt   DateTime @default(now())
 
-  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  event Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  seats BookingSeat[]
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event  Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seats  BookingSeat[]
+  addons BookingAddon[]
 }
 
 model BookingSeat {
@@ -119,11 +181,22 @@ model BookingSeat {
   showSeat ShowSeat @relation(fields: [showSeatId], references: [id], onDelete: Cascade)
 }
 
+model BookingAddon {
+  id          String @id @default(uuid())
+  bookingId   String
+  foodAddonId String
+  quantity    Int
+  price       Float
+
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  foodAddon FoodAddon @relation(fields: [foodAddonId], references: [id], onDelete: Cascade)
+}
+
 model Waitlist {
   id             String    @id @default(uuid())
   eventId        String
   userId         String
-  seatCategory   String    // STANDARD, PREMIUM, VIP
+  seatCategory   String    // STANDARD, PREMIUM, VIP, PLATINUM, GOLD, SILVER
   status         String    @default("WAITING") // WAITING, OFFERED, EXPIRED, FULFILLED
   offerExpiresAt DateTime?
   createdAt      DateTime  @default(now())

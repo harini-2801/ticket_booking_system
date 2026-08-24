@@ -1,13 +1,13 @@
-# System Design Document: Ticket Booking System
+# System Design Document: District Ticket Booking Platform
 
 ## Executive Summary
-This document details the architectural design and technical mechanisms powering the high-concurrency **Ticket Booking System**. The platform resolves key industry challenges: instant sell-outs during high demand, unsold inventory from last-minute cancellations, and double-booking race conditions during seat selection.
+This document details the expanded system design and technical architecture powering **District Pass**, an enterprise-grade event discovery and ticket booking platform inspired by Zomato District. The system resolves seat hoarding during high demand, double-booking race conditions, last-minute cancellation inventory waste, and provides seamless Food & Beverage (F&B) combo integration with calendar synchronization.
 
 ---
 
 ## 1. Seat Hold & TTL Mechanism
 
-To prevent seat hoarding while granting customers adequate checkout time, seats are held under a configurable Time-To-Live (**TTL**) window of **10 minutes**.
+To grant customers sufficient checkout time while preventing inventory lockup, selected seats enter a **10-minute Time-To-Live (TTL)** hold window.
 
 ```
 [Customer Selects Seats] ---> [Atomic Hold Request] ---> [Status: HELD, Expiry: NOW + 10 min]
@@ -22,21 +22,21 @@ To prevent seat hoarding while granting customers adequate checkout time, seats 
 ```
 
 ### Expiry Enforcement & Auto-Release Strategy
-1. **Lazy Evaluation on Read**: Every seat map query (`GET /api/events/:id`) or seat acquisition attempt runs a database-level expiration check. Held seats where `holdExpiresAt < NOW()` are immediately treated as available and lazily released.
-2. **Background Cron Cleanup**: A lightweight scheduled background task (`/api/cron/release-holds`) periodically identifies expired holds, resets their status to `AVAILABLE`, and triggers waitlist auto-offers.
+1. **Lazy Evaluation on Read**: Every seat map query (`GET /api/events/:id`) runs a database-level expiration check (`holdExpiresAt < NOW()`). Expired holds are instantly reset to `AVAILABLE`.
+2. **Background Maintenance Cron**: A scheduled background worker (`/api/cron/release-holds`) periodically clears stale holds across all events and initiates automated waitlist seat allocation.
 
 ---
 
 ## 2. Concurrency Protection & Race Condition Prevention
 
-High-demand events risk simultaneous seat requests from multiple users leading to double-booking. The system enforces strict optimistic concurrency control (**OCC**) using atomic database operations.
+High-demand events (e.g. Coldplay, IPL Finals) risk simultaneous seat selections. The system enforces Optimistic Concurrency Control (**OCC**) using atomic database transactions.
 
 ### Data Model Locking Fields
 Each `ShowSeat` entity maintains:
 - `status`: (`AVAILABLE`, `HELD`, `BOOKED`)
 - `heldByUserId`: Nullable string ID of hold owner
-- `holdExpiresAt`: Timestamp when hold expires
-- `version`: Integer incremented on every status mutation
+- `holdExpiresAt`: Expiration timestamp
+- `version`: Integer incremented on every mutation
 
 ### Atomic Hold Acquisition Query
 ```sql
@@ -55,13 +55,13 @@ WHERE
     OR "heldByUserId" = :currentUserId
   );
 ```
-- **Atomicity Guarantee**: If two users attempt to hold the exact same seat simultaneously, only one transaction updates 1 row; the second operation finds 0 matching rows (`version` mismatch or status change) and fails gracefully with a `409 Concurrency Conflict` error.
+- **Atomicity Guarantee**: If two users attempt to hold the exact same seat simultaneously, only one transaction updates 1 row; the second operation finds 0 matching rows (`version` mismatch) and fails gracefully with a `409 Concurrency Conflict` error.
 
 ---
 
 ## 3. Waitlist Auto-Assignment & Time-Limited Offer Flow
 
-When an event or seat category sells out, customers can join a First-In, First-Out (**FIFO**) waitlist per `(eventId, seatCategory)`.
+When an event category sells out, customers join a First-In, First-Out (**FIFO**) waitlist per `(eventId, seatCategory)`.
 
 ```
 [Booking Cancelled / Hold Expired] 
@@ -87,15 +87,9 @@ When an event or seat category sells out, customers can join a First-In, First-O
                                                           [Reallocate to Next in Line]
 ```
 
-### Automated Reallocation Cycle
-1. **Cancellation Event**: When a customer cancels a confirmed booking, the backend immediately releases the seats and invokes `processWaitlistForCategory()`.
-2. **Offer Dispatch**: The top waitlist customer (`status = 'WAITING'`, sorted by `createdAt ASC`) is granted a time-limited offer (`status = 'OFFERED'`, `offerExpiresAt = NOW() + 10 min`). The system holds an available seat exclusively for them and dispatches a notification email with a direct claim URL.
-3. **Expiry Escalation**: If the offered customer fails to claim within 10 minutes, the offer expires (`status = 'EXPIRED'`), releasing the seat to the next waiting customer in sequence.
-
 ---
 
-## 4. QR Code Generation & Email Delivery Workflow
+## 4. Food & Beverage (F&B) Combo Engine & Calendar Sync
 
-1. **Unique Reference**: Upon payment, a collision-resistant booking reference is created (e.g. `TKT-984210-4491`).
-2. **QR Encoding**: The `qrcode` generator produces a high-density Base64 PNG Data URL encoding the reference and validation hash.
-3. **Instant Email Dispatch**: Nodemailer delivers an HTML ticket email with inline embedded QR code for seamless venue gate scanning.
+1. **F&B Combo Add-ons**: Customers can select gourmet popcorn, nachos, sodas, or VIP Lounge passes during ticket checkout. F&B orders generate a dedicated voucher code alongside the entry QR ticket.
+2. **iCalendar (.ics) Sync**: Confirmed bookings generate a standard RFC 5545 `.ics` file allowing 1-click event addition to Google Calendar and Apple Calendar.

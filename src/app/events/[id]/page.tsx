@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Ticket, Clock, CheckCircle2, AlertCircle, ShieldAlert, Sparkles, User, RefreshCw, X, ArrowLeft } from 'lucide-react';
+import { Ticket, Clock, CheckCircle2, AlertCircle, Sparkles, X, ArrowLeft, Utensils, Plus, Minus, ShieldCheck, MapPin, Calendar, Users, Star } from 'lucide-react';
 import Link from 'next/link';
 
 interface SeatTemplate {
@@ -28,20 +28,45 @@ interface EventPricing {
   price: number;
 }
 
+interface FoodAddon {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price: number;
+  imageUrl: string;
+}
+
+interface Performer {
+  id: string;
+  name: string;
+  role: string;
+  avatarUrl: string;
+}
+
 interface EventDetail {
   id: string;
   title: string;
+  subtitle: string;
   description: string;
   category: string;
+  genre: string;
+  language: string;
+  ageRestriction: string;
+  duration: string;
   posterUrl: string;
+  bannerUrl: string;
   date: string;
+  city: { name: string } | null;
   venue: {
     name: string;
     location: string;
+    address: string;
     totalRows: number;
     seatsPerRow: number;
   };
   pricings: EventPricing[];
+  performers: { performer: Performer }[];
 }
 
 function EventBookingContent() {
@@ -54,14 +79,19 @@ function EventBookingContent() {
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [showSeats, setShowSeats] = useState<ShowSeat[]>([]);
   const [categoryWaitlists, setCategoryWaitlists] = useState<Record<string, any>>({});
+  const [foodAddons, setFoodAddons] = useState<FoodAddon[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Selected State
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<Record<string, number>>({});
   const [holdExpiresAt, setHoldExpiresAt] = useState<Date | null>(null);
   const [timeLeftSeconds, setTimeLeftSeconds] = useState<number | null>(null);
   const [holdingLoading, setHoldingLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showFoodModal, setShowFoodModal] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [joiningWaitlist, setJoiningWaitlist] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
@@ -70,7 +100,7 @@ function EventBookingContent() {
 
   useEffect(() => {
     fetchEventData();
-    const interval = setInterval(fetchEventData, 10000); // Polling every 10s for real-time seat status
+    const interval = setInterval(fetchEventData, 10000);
     return () => clearInterval(interval);
   }, [eventId]);
 
@@ -115,9 +145,9 @@ function EventBookingContent() {
       setEvent(data.event);
       setShowSeats(data.showSeats || []);
       setCategoryWaitlists(data.categoryWaitlists || {});
+      setFoodAddons(data.foodAddons || []);
       setCurrentUserId(data.currentUserId);
 
-      // Check if user already has held seats
       if (data.currentUserId) {
         const userHeld = data.showSeats.filter(
           (s: ShowSeat) =>
@@ -130,7 +160,6 @@ function EventBookingContent() {
         if (userHeld.length > 0) {
           const heldIds = userHeld.map((s: ShowSeat) => s.id);
           setSelectedSeatIds(heldIds);
-          // Set expiry from the latest held seat
           const expiresArr = userHeld.map((s: ShowSeat) => new Date(s.holdExpiresAt!).getTime());
           const maxExpiry = new Date(Math.max(...expiresArr));
           setHoldExpiresAt(maxExpiry);
@@ -166,7 +195,6 @@ function EventBookingContent() {
 
     setSelectedSeatIds(newSelected);
 
-    // Automatically trigger hold API when seats are toggled
     if (newSelected.length > 0) {
       await acquireHold(newSelected);
     } else {
@@ -213,6 +241,12 @@ function EventBookingContent() {
     } catch (err) {
       console.error('Failed to release hold:', err);
     }
+  };
+
+  const handleAddonQuantity = (addonId: string, delta: number) => {
+    const current = selectedAddons[addonId] || 0;
+    const next = Math.max(0, current + delta);
+    setSelectedAddons({ ...selectedAddons, [addonId]: next });
   };
 
   const handleClaimWaitlist = async (waitlistId: string) => {
@@ -267,6 +301,11 @@ function EventBookingContent() {
     setBookingLoading(true);
     setErrorMsg(null);
 
+    // Format selected addons array
+    const addonsPayload = Object.entries(selectedAddons)
+      .filter(([_, qty]) => qty > 0)
+      .map(([addonId, quantity]) => ({ addonId, quantity }));
+
     try {
       const res = await fetch('/api/bookings', {
         method: 'POST',
@@ -274,6 +313,7 @@ function EventBookingContent() {
         body: JSON.stringify({
           eventId,
           showSeatIds: selectedSeatIds,
+          selectedAddons: addonsPayload,
         }),
       });
       const data = await res.json();
@@ -292,19 +332,25 @@ function EventBookingContent() {
 
   if (loading || !event) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+      <div className="flex items-center justify-center py-24 text-slate-400">
+        Loading District Event Experience...
       </div>
     );
   }
 
-  // Price map
   const priceMap: Record<string, number> = {};
   event.pricings.forEach((p) => (priceMap[p.seatCategory] = p.price));
 
-  // Compute selected seats summary
   const selectedSeats = showSeats.filter((s) => selectedSeatIds.includes(s.id));
-  const totalPrice = selectedSeats.reduce((sum, s) => sum + (priceMap[s.seatTemplate.category] || 20), 0);
+  const ticketTotal = selectedSeats.reduce((sum, s) => sum + (priceMap[s.seatTemplate.category] || 20), 0);
+
+  // F&B Addons Total Calculation
+  const addonsTotal = Object.entries(selectedAddons).reduce((sum, [addonId, qty]) => {
+    const item = foodAddons.find((f) => f.id === addonId);
+    return sum + (item ? item.price * qty : 0);
+  }, 0);
+
+  const grandTotal = ticketTotal + addonsTotal;
 
   // Group seats by row
   const rowsMap: Record<string, ShowSeat[]> = {};
@@ -322,46 +368,72 @@ function EventBookingContent() {
   };
 
   return (
-    <div className="space-y-8 pb-24">
-      {/* Top Header & Navigation Back */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
-        <div>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white mb-2 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Catalog
-          </Link>
-          <h1 className="text-2xl sm:text-4xl font-extrabold text-white">{event.title}</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            {event.venue.name} • {new Date(event.date).toLocaleString()}
-          </p>
+    <div className="space-y-8 pb-32">
+      {/* Back Navigation */}
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back to District Events
+      </Link>
+
+      {/* Hero Header */}
+      <div className="relative rounded-3xl bg-slate-900 border border-slate-800 p-6 sm:p-10 shadow-2xl overflow-hidden">
+        <div className="absolute inset-0 z-0 opacity-20">
+          <img src={event.bannerUrl || event.posterUrl} alt={event.title} className="w-full h-full object-cover blur-sm" />
         </div>
 
-        {/* Categories Price Badges */}
-        <div className="flex flex-wrap items-center gap-2">
-          {event.pricings.map((p) => (
-            <div
-              key={p.seatCategory}
-              className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2"
-            >
-              <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  p.seatCategory === 'VIP'
-                    ? 'bg-amber-400'
-                    : p.seatCategory === 'PREMIUM'
-                    ? 'bg-purple-400'
-                    : 'bg-emerald-400'
-                }`}
-              />
-              <span className="text-slate-300">{p.seatCategory}:</span>
-              <span className="text-white font-bold">${p.price.toFixed(2)}</span>
+        <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+          <div className="md:col-span-3 max-w-xs mx-auto md:mx-0">
+            <img src={event.posterUrl} alt={event.title} className="w-full rounded-2xl shadow-xl border border-slate-700 aspect-[3/4] object-cover" />
+          </div>
+
+          <div className="md:col-span-9 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs font-bold px-3 py-1 rounded-full uppercase">
+                {event.category}
+              </span>
+              <span className="bg-slate-800 text-slate-300 text-xs font-semibold px-3 py-1 rounded-full border border-slate-700">
+                {event.genre}
+              </span>
+              <span className="bg-amber-950 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-800">
+                {event.ageRestriction}
+              </span>
             </div>
-          ))}
+
+            <h1 className="text-3xl sm:text-5xl font-extrabold text-white">{event.title}</h1>
+            <p className="text-slate-300 text-sm sm:text-base">{event.subtitle || event.description}</p>
+
+            {/* Performers Avatars */}
+            {event.performers && event.performers.length > 0 && (
+              <div className="flex items-center gap-3 pt-2">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Featured Artists:</span>
+                <div className="flex items-center gap-3">
+                  {event.performers.map((p) => (
+                    <div key={p.performer.id} className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-full border border-slate-800">
+                      <img src={p.performer.avatarUrl} alt={p.performer.name} className="w-6 h-6 rounded-full object-cover" />
+                      <span className="text-xs font-bold text-white">{p.performer.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300 pt-2 border-t border-slate-800/80">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-blue-400" />
+                <span>{new Date(event.date).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-slate-400" />
+                <span>{event.venue.name} ({event.venue.location})</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Notifications / Alerts */}
+      {/* Notifications */}
       {errorMsg && (
         <div className="bg-red-950/80 border border-red-800 text-red-200 p-4 rounded-xl flex items-start gap-3 shadow-lg">
           <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
@@ -382,30 +454,27 @@ function EventBookingContent() {
         </div>
       )}
 
-      {/* Active Hold TTL Countdown Banner */}
+      {/* 10-Min Hold TTL Timer Banner */}
       {timeLeftSeconds !== null && (
-        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 border border-blue-600/50 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 border border-blue-600/50 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white animate-pulse">
+            <div className="p-2 bg-blue-600 rounded-xl text-white animate-pulse">
               <Clock className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-white">Seats Held Temporary Reservation</p>
-              <p className="text-xs text-blue-300">Complete checkout before hold expires to confirm ticket.</p>
+              <p className="text-sm font-bold text-white">Seats Held Temporary Reservation</p>
+              <p className="text-xs text-blue-300">Complete checkout before 10-minute hold expires.</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="bg-slate-950 px-4 py-2 rounded-lg border border-blue-500/40 text-center">
-              <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold block">Time Remaining</span>
-              <span className="text-2xl font-mono font-bold text-amber-400">{formatTimer(timeLeftSeconds)}</span>
-            </div>
+          <div className="bg-slate-950 px-5 py-2 rounded-xl border border-blue-500/40 text-center">
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Hold Expiry</span>
+            <span className="text-2xl font-mono font-extrabold text-amber-400">{formatTimer(timeLeftSeconds)}</span>
           </div>
         </div>
       )}
 
       {/* VISUAL SEAT MAP */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-10 shadow-2xl space-y-8 overflow-x-auto">
-        {/* Screen / Stage Indicator */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8 overflow-x-auto">
         <div className="w-full max-w-2xl mx-auto space-y-2">
           <div className="h-3 bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-600 rounded-full shadow-[0_0_20px_rgba(37,99,235,0.5)]" />
           <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-500">
@@ -480,38 +549,87 @@ function EventBookingContent() {
         </div>
       </div>
 
-      {/* WAITLIST SECTION PER CATEGORY */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+      {/* FOOD & BEVERAGE ADDONS SECTION */}
+      {foodAddons.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Utensils className="w-6 h-6 text-amber-400" />
+              <div>
+                <h2 className="text-xl font-bold text-white">Food & Beverage Combos</h2>
+                <p className="text-xs text-slate-400">Add popcorn, snacks, sodas, or VIP Lounge passes to your booking.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {foodAddons.map((addon) => {
+              const qty = selectedAddons[addon.id] || 0;
+
+              return (
+                <div
+                  key={addon.id}
+                  className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 hover:border-slate-700 transition-colors"
+                >
+                  <img src={addon.imageUrl} alt={addon.name} className="w-16 h-16 rounded-xl object-cover shrink-0" />
+                  <div className="flex-1 space-y-1">
+                    <h4 className="font-bold text-xs text-white leading-snug">{addon.name}</h4>
+                    <p className="text-[10px] text-slate-400 line-clamp-1">{addon.description}</p>
+                    <p className="text-xs font-extrabold text-blue-400">${addon.price.toFixed(2)}</p>
+                  </div>
+
+                  {/* Quantity Counter */}
+                  <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+                    <button
+                      onClick={() => handleAddonQuantity(addon.id, -1)}
+                      className="p-1 text-slate-400 hover:text-white"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-xs font-bold text-white w-4 text-center">{qty}</span>
+                    <button
+                      onClick={() => handleAddonQuantity(addon.id, 1)}
+                      className="p-1 text-slate-400 hover:text-white"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* WAITLIST SECTION */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-amber-400" />
           <h2 className="text-lg font-bold text-white">Waitlist & Automated Seat Reallocation</h2>
         </div>
-        <p className="text-xs text-slate-400">
-          If a seat category sells out, join the waitlist. When any booking is cancelled, seats are automatically offered to the top waitlist customer with a 10-minute claim window.
-        </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {event.pricings.map((p) => {
             const categoryData = categoryWaitlists[p.seatCategory] || { count: 0, userWaitlisted: false };
 
             return (
               <div
                 key={p.seatCategory}
-                className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between"
+                className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center justify-between"
               >
                 <div>
-                  <h4 className="font-semibold text-sm text-white">{p.seatCategory} Category</h4>
+                  <h4 className="font-bold text-sm text-white">{p.seatCategory} Category</h4>
                   <p className="text-xs text-slate-400">{categoryData.count} customers in queue</p>
                 </div>
                 {categoryData.userWaitlisted ? (
-                  <span className="text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-800 px-3 py-1.5 rounded-lg">
+                  <span className="text-xs font-bold bg-amber-950/80 text-amber-300 border border-amber-800 px-3 py-1.5 rounded-xl">
                     In Waitlist Queue
                   </span>
                 ) : (
                   <button
                     onClick={() => handleJoinWaitlist(p.seatCategory)}
                     disabled={joiningWaitlist === p.seatCategory}
-                    className="bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+                    className="bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors"
                   >
                     {joiningWaitlist === p.seatCategory ? 'Joining...' : 'Join Waitlist'}
                   </button>
@@ -524,32 +642,36 @@ function EventBookingContent() {
 
       {/* STICKY BOTTOM BAR FOR CHECKOUT */}
       {selectedSeatIds.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 border-t border-slate-800 p-4 backdrop-blur shadow-2xl">
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-800 p-4 backdrop-blur shadow-2xl">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-6">
               <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Selected Seats</p>
-                <p className="text-sm font-bold text-white">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">Selected Seats</p>
+                <p className="text-xs font-bold text-white">
                   {selectedSeats.map((s) => `Row ${s.seatTemplate.row}-${s.seatTemplate.number}`).join(', ')}
                 </p>
               </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">F&B Addons Total</p>
+                <p className="text-xs font-bold text-amber-400">${addonsTotal.toFixed(2)}</p>
+              </div>
               <div className="h-8 w-px bg-slate-800 hidden sm:block" />
               <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Price</p>
-                <p className="text-xl font-extrabold text-blue-400">${totalPrice.toFixed(2)}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">Grand Total</p>
+                <p className="text-xl font-extrabold text-blue-400">${grandTotal.toFixed(2)}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <button
                 onClick={() => releaseHold(selectedSeatIds)}
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
+                className="px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 hover:text-white text-xs font-semibold"
               >
-                Clear Selection
+                Clear Seats
               </button>
               <button
                 onClick={() => setShowCheckoutModal(true)}
-                className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg transition-colors flex items-center justify-center gap-2"
+                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg transition-colors flex items-center justify-center gap-2"
               >
                 <Ticket className="w-4 h-4" /> Proceed to Checkout
               </button>
@@ -558,10 +680,10 @@ function EventBookingContent() {
         </div>
       )}
 
-      {/* CHECKOUT MODAL */}
+      {/* CHECKOUT SUMMARY MODAL */}
       {showCheckoutModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-6 shadow-2xl relative">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl relative">
             <button
               onClick={() => setShowCheckoutModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
@@ -570,48 +692,54 @@ function EventBookingContent() {
             </button>
 
             <div className="space-y-1">
-              <h3 className="text-xl font-extrabold text-white">Confirm Booking</h3>
-              <p className="text-xs text-slate-400">Review your ticket summary and complete your purchase.</p>
+              <h3 className="text-xl font-extrabold text-white">District Pass Order Summary</h3>
+              <p className="text-xs text-slate-400">Review your ticket seats & Food/Beverage add-ons.</p>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-              <div className="flex justify-between text-xs">
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 text-xs">
+              <div className="flex justify-between">
                 <span className="text-slate-400">Event:</span>
-                <span className="font-semibold text-white">{event.title}</span>
+                <span className="font-bold text-white">{event.title}</span>
               </div>
-              <div className="flex justify-between text-xs">
+              <div className="flex justify-between">
                 <span className="text-slate-400">Venue:</span>
                 <span className="font-semibold text-white">{event.venue.name}</span>
               </div>
-              <div className="border-t border-slate-800 pt-2 flex justify-between text-xs">
-                <span className="text-slate-400">Seats:</span>
-                <span className="font-semibold text-blue-400">
-                  {selectedSeats.map((s) => `R${s.seatTemplate.row}-${s.seatTemplate.number}`).join(', ')}
-                </span>
+              <div className="border-t border-slate-800 pt-2 flex justify-between">
+                <span className="text-slate-400">Seats Subtotal:</span>
+                <span className="font-bold text-blue-400">${ticketTotal.toFixed(2)}</span>
               </div>
-              <div className="border-t border-slate-800 pt-2 flex justify-between text-sm font-bold">
-                <span className="text-slate-200">Total Payable:</span>
-                <span className="text-blue-400">${totalPrice.toFixed(2)}</span>
-              </div>
-            </div>
 
-            <div className="bg-blue-950/40 border border-blue-800/60 p-3 rounded-lg text-[11px] text-blue-300 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
-              <span>A confirmation email with an embedded QR code ticket will be dispatched instantly.</span>
+              {/* Addons List */}
+              {addonsTotal > 0 && (
+                <div className="border-t border-slate-800 pt-2 space-y-1">
+                  <span className="text-slate-400 block font-semibold">F&B Addons:</span>
+                  {Object.entries(selectedAddons).map(([addonId, qty]) => {
+                    if (qty <= 0) return null;
+                    const item = foodAddons.find((f) => f.id === addonId);
+                    if (!item) return null;
+                    return (
+                      <div key={addonId} className="flex justify-between text-[11px] text-slate-300">
+                        <span>{qty}x {item.name}</span>
+                        <span>${(item.price * qty).toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="border-t border-slate-800 pt-3 flex justify-between text-base font-extrabold">
+                <span className="text-white">Total Payable:</span>
+                <span className="text-blue-400">${grandTotal.toFixed(2)}</span>
+              </div>
             </div>
 
             <button
               onClick={handleConfirmBooking}
               disabled={bookingLoading}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-2xl shadow-xl transition-colors flex items-center justify-center gap-2"
             >
-              {bookingLoading ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  <Ticket className="w-5 h-5" /> Confirm & Generate QR Ticket
-                </>
-              )}
+              {bookingLoading ? 'Processing Ticket & QR...' : 'Confirm Order & Issue Digital Ticket'}
             </button>
           </div>
         </div>
@@ -622,7 +750,7 @@ function EventBookingContent() {
 
 export default function EventBookingPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-24 text-slate-400">Loading seat map...</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center py-24 text-slate-400">Loading District Event...</div>}>
       <EventBookingContent />
     </Suspense>
   );
